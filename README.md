@@ -5,10 +5,6 @@
 
 **An incident-response agent that remembers every past outage and learns which fixes actually work.**
 
-![Status](https://img.shields.io/badge/status-hackathon_build-2ea44f)
-![Backend](https://img.shields.io/badge/backend-Python-3776AB?logo=python&logoColor=white)
-![Memory](https://img.shields.io/badge/memory-Hindsight-8A2BE2)
-![Domain](https://img.shields.io/badge/domain-SRE_%26_AIOps-orange)
 
 </div>
 
