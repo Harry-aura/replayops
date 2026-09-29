@@ -1,0 +1,74 @@
+[
+  {
+    "incident_id": "INC-101",
+    "title": "Payment Service Redis Connection Pool Exhaustion",
+    "service": "payment-service",
+    "severity": "CRITICAL",
+    "status": "RESOLVED",
+    "timestamp": "2026-09-28T09:15:00Z",
+    "error_message": "redis.exceptions.ConnectionError: Connection pool exhausted. Maximum 50 connections reached.",
+    "symptoms": [
+      "Payment checkout HTTP 504 Gateway Timeout",
+      "Stripe webhook processing latency increased from 120ms to 45,000ms",
+      "Redis CPU usage normal (14%) but client connections maxed out at 50"
+    ],
+    "root_cause": "A recent flash sale promotional banner doubled incoming traffic. The payment service lacked connection pool timeout configuration and suffered from leaked idle connection handles in unhandled exception paths during Stripe checkout session creation.",
+    "failed_mitigations": [
+      "Attempted restarting payment-service pods. This triggered a cascading connection storm upon container startup, causing upstream API gateway to drop all checkout requests."
+    ],
+    "successful_resolution": "Increased Redis max pool size from 50 to 500, configured strict connection lease timeout of 3000ms, and wrapped Stripe session handlers in try-finally blocks to ensure connection release back to the pool.",
+    "prevention_steps": [
+      "Added Prometheus alert on Redis pool saturation > 80%",
+      "Implemented client-side circuit breaker with 2-second fallback"
+    ],
+    "tags": ["payment", "redis", "connection-pool", "stripe", "timeout", "critical"]
+  },
+  {
+    "incident_id": "INC-102",
+    "title": "Auth Service PostgreSQL Database Deadlock on User Sessions",
+    "service": "auth-service",
+    "severity": "HIGH",
+    "status": "RESOLVED",
+    "timestamp": "2026-09-28T10:45:00Z",
+    "error_message": "asyncpg.exceptions.DeadlockDetectedError: deadlock detected on relation user_sessions (Process 49281 waits for ExclusiveLock; Process 49299 waits for ShareLock)",
+    "symptoms": [
+      "Single Sign-On (SSO) login failures spiking to 38%",
+      "JWT token refresh requests hanging indefinitely and returning HTTP 500",
+      "PostgreSQL active connections spiking to max_connections (200)"
+    ],
+    "root_cause": "Concurrent token refresh and session revocation endpoints updated user_sessions and user_tokens tables in conflicting order (Transaction A locked sessions then tokens; Transaction B locked tokens then sessions), producing circular lock dependency under high load.",
+    "failed_mitigations": [
+      "Restarting PostgreSQL database dropped all active customer sessions and broke active WebSocket connections across all microservices without curing the underlying query ordering conflict."
+    ],
+    "successful_resolution": "Standardized table lock acquisition order across all authentication queries (always user_tokens then user_sessions), adjusted PostgreSQL isolation level to READ COMMITTED with exponential backoff retries on DeadlockDetectedError.",
+    "prevention_steps": [
+      "Added database lock contention query monitoring in Grafana",
+      "Enforced atomic session updates via single stored procedure"
+    ],
+    "tags": ["auth", "postgres", "deadlock", "sso", "session", "high"]
+  },
+  {
+    "incident_id": "INC-103",
+    "title": "Notification Service OOMKilled Heap Crash on Kafka Batch Ingestion",
+    "service": "notification-service",
+    "severity": "HIGH",
+    "status": "RESOLVED",
+    "timestamp": "2026-09-28T12:00:00Z",
+    "error_message": "Container killed by Kubernetes OOMKilled (exit code 137). java.lang.OutOfMemoryError: Java heap space",
+    "symptoms": [
+      "Notification delivery delay exceeded 45 minutes for email and push notifications",
+      "Kubernetes pods repeatedly entering CrashLoopBackOff",
+      "Kafka consumer group lag increasing exponentially (surpassed 120,000 unread messages)"
+    ],
+    "root_cause": "Kafka consumer was configured with max.poll.records=50000 without memory paging. A marketing campaign sent bulk broadcast payloads with large HTML templates, causing heap allocations to exceed the 2GB container limit during deserialization.",
+    "failed_mitigations": [
+      "Scaling Kubernetes horizontal pod autoscaler (HPA) from 3 to 15 pods caused consumer partition rebalancing storms, stalling all consumer threads and exacerbating the backlog."
+    ],
+    "successful_resolution": "Reduced Kafka consumer batch size to max.poll.records=500, enabled streaming deserialization, and increased pod memory limits from 2Gi to 4Gi with JVM heap parameter -XX:MaxRAMPercentage=75.",
+    "prevention_steps": [
+      "Added payload size validation at API ingestion boundary (limit: 256KB)",
+      "Configured automated partition lag alerts on Kafka cluster"
+    ],
+    "tags": ["notification", "kafka", "oom", "kubernetes", "memory-leak", "high"]
+  }
+]
